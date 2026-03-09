@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Global Random Video Chat</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>?? Global Random Video Chat</header>
+
+<div id="login">
+  <div id="loginBox">
+    <h3>Join Chat</h3>
+    <input id="username" placeholder="Your name">
+    <select id="country">
+      <option value="">Select Country</option>
+      <option>Algeria</option>
+      <option>France</option>
+      <option>USA</option>
+      <option>Morocco</option>
+      <option>Tunisia</option>
+    </select>
+    <select id="gender">
+      <option value="">Select Gender</option>
+      <option>Male</option>
+      <option>Female</option>
+    </select>
+    <button onclick="join()">Enter Chat</button>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <div id="userInfo"></div>
+    <div>
+      <button onclick="findUser()">?? Find</button>
+      <button onclick="nextUser()">? Next</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="videos">
+      <div>
+        <h4>You</h4>
+        <video id="localVideo" autoplay playsinline></video>
+      </div>
+      <div>
+        <h4>Stranger</h4>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </div>
+
+    <div id="chat">
+      <div id="messages"></div>
+      <div id="chatInput">
+        <input id="msg" placeholder="Type a message">
+        <button onclick="sendMessage()">Send</button>
+        <input type="file" id="img" onchange="sendImage()">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let peer;
+let localStream;
+
+function join() {
+  const name = username.value;
+  const country = document.getElementById("country").value;
+  const gender = document.getElementById("gender").value;
+
+  if(name==="") return;
+
+  socket.emit("join",{name,country,gender});
+  login.style.display="none";
+  app.style.display="block";
+
+  userInfo.innerText = name+" | "+country+" | "+gender;
+}
+
+navigator.mediaDevices.getUserMedia({video:true,audio:true}).then(stream=>{
+  localStream = stream;
+  localVideo.srcObject = stream;
+});
+
+function createPeer(){
+  peer = new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
+  localStream.getTracks().forEach(track=>peer.addTrack(track,localStream));
+  peer.ontrack=e=>{ remoteVideo.srcObject = e.streams[0]; };
+  peer.onicecandidate=e=>{
+    if(e.candidate) socket.emit("ice",e.candidate);
+  };
+}
+
+function findUser(){
+  socket.emit("find");
+  messages.innerHTML += "<p>Searching for a partner...</p>";
+}
+
+function nextUser(){
+  location.reload();
+}
+
+function sendMessage(){
+  let text = msg.value;
+  if(text==="") return;
+  messages.innerHTML += "<p><b>You:</b> "+text+"</p>";
+  socket.emit("message",text);
+  msg.value="";
+}
+
+socket.on("message",text=>{
+  messages.innerHTML += "<p><b>Stranger:</b> "+text+"</p>";
+});
+
+function sendImage(){
+  const file = img.files[0];
+  const reader = new FileReader();
+  reader.onload = function(){
+    messages.innerHTML += "<p><b>You:</b><br><img src='"+reader.result+"'></p>";
+    socket.emit("image",reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+socket.on("image",data=>{
+  messages.innerHTML += "<p><b>Stranger:</b><br><img src='"+data+"'></p>";
+});
+
+socket.on("matched",async()=>{
+  createPeer();
+  const offer = await peer.createOffer();
+  await peer.setLocalDescription(offer);
+  socket.emit("offer",offer);
+});
+
+socket.on("offer",async offer=>{
+  createPeer();
+  await peer.setRemoteDescription(offer);
+  const answer = await peer.createAnswer();
+  await peer.setLocalDescription(answer);
+  socket.emit("answer",answer);
+});
+
+socket.on("answer",async answer=>{
+  await peer.setRemoteDescription(answer);
+});
+
+socket.on("ice",async candidate=>{
+  try{ await peer.addIceCandidate(candidate); }catch(e){}
+});
+</script>
+
+</body>
+</html>
