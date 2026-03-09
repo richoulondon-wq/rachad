@@ -115,12 +115,11 @@ function findUser(){
 }
 
 function nextUser(){
-  if(peer){ peer.close(); peer=null; }
-  remoteVideo.srcObject = null;
-  messages.innerHTML = "";
-  socket.emit("next");
+    if(peer){ peer.close(); peer=null; }
+    remoteVideo.srcObject = null;
+    messages.innerHTML = "";
+    socket.emit("next");  // ????? ???? ??????? ????? ?? ???? ????
 }
-
 function sendMessage(){
   let text = msg.value;
   if(!text) return;

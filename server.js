@@ -21,20 +21,36 @@ io.on("connection", socket => {
     console.log(`${data.name} joined`);
   });
 
-  socket.on("find", () => {
-    if(waitingUser && waitingUser !== socket){
-      socket.partner = waitingUser;
-      waitingUser.partner = socket;
-
-      socket.emit("matched");
-      waitingUser.emit("matched");
-
-      waitingUser = null;
-    } else {
-      waitingUser = socket;
-      socket.emit("status", "Searching for a partner...");
+socket.on("find", () => {
+    // تنظيف الشريك الحالي إذا وجد
+    if(socket.partner){
+        socket.partner.emit("partner-left");
+        socket.partner.partner = null;
+        socket.partner = null;
     }
-  });
+
+    // البحث عن شريك جديد
+    if(waitingUser && waitingUser !== socket){
+        socket.partner = waitingUser;
+        waitingUser.partner = socket;
+
+        socket.emit("matched");
+        waitingUser.emit("matched");
+
+        waitingUser = null;
+    } else {
+        waitingUser = socket;
+        socket.emit("status", "Searching for a partner...");
+    }
+});
+
+socket.on("disconnect", () => {
+    if(waitingUser === socket) waitingUser = null;
+    if(socket.partner){
+        socket.partner.emit("partner-left");
+        socket.partner.partner = null;
+    }
+});
 
   socket.on("next", () => {
     if(socket.partner){
