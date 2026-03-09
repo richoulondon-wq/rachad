@@ -2,7 +2,9 @@ const express = require("express");
 const path = require("path");
 const app = express();
 const http = require("http").createServer(app);
-const io = require("socket.io")(http);
+const io = require("socket.io")(http, {
+  cors: { origin: "*", methods: ["GET","POST"] } 
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -10,7 +12,7 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-let waitingUser = null;
+let waitingUsers = [];
 
 io.on("connection", socket => {
 
@@ -21,53 +23,43 @@ io.on("connection", socket => {
     console.log(`${data.name} joined`);
   });
 
-socket.on("find", () => {
-    // تنظيف الشريك الحالي إذا وجد
+  socket.on("find", () => {
+
+    // إزالة أي ظهور سابق للمستخدم في قائمة الانتظار
+    waitingUsers = waitingUsers.filter(s => s !== socket);
+
+    // البحث عن شريك
+    if(waitingUsers.length > 0){
+        const partner = waitingUsers.shift(); // أول شخص في القائمة
+        socket.partner = partner;
+        partner.partner = socket;
+
+        socket.emit("matched");
+        partner.emit("matched");
+
+    } else {
+        waitingUsers.push(socket);
+        socket.emit("status","Searching for a partner...");
+    }
+
+  });
+
+  socket.on("next", () => {
     if(socket.partner){
         socket.partner.emit("partner-left");
         socket.partner.partner = null;
         socket.partner = null;
     }
-
-    // البحث عن شريك جديد
-    if(waitingUser && waitingUser !== socket){
-        socket.partner = waitingUser;
-        waitingUser.partner = socket;
-
-        socket.emit("matched");
-        waitingUser.emit("matched");
-
-        waitingUser = null;
-    } else {
-        waitingUser = socket;
-        socket.emit("status", "Searching for a partner...");
-    }
-});
-
-socket.on("disconnect", () => {
-    if(waitingUser === socket) waitingUser = null;
-    if(socket.partner){
-        socket.partner.emit("partner-left");
-        socket.partner.partner = null;
-    }
-});
-
-  socket.on("next", () => {
-    if(socket.partner){
-      socket.partner.emit("partner-left");
-      socket.partner.partner = null;
-      socket.partner = null;
-    }
-    socket.emit("status", "Searching for a partner...");
-    socket.emit("matched"); // للسماح بالبحث من جديد
+    socket.emit("status","Searching for a new partner...");
+    socket.emit("find"); // البحث مرة أخرى
   });
 
   socket.on("message", msg => {
-    if(socket.partner) socket.partner.emit("message", msg);
+      if(socket.partner) socket.partner.emit("message", msg);
   });
 
   socket.on("image", data => {
-    if(socket.partner) socket.partner.emit("image", data);
+      if(socket.partner) socket.partner.emit("image", data);
   });
 
   socket.on("offer", data => { if(socket.partner) socket.partner.emit("offer", data); });
@@ -75,8 +67,12 @@ socket.on("disconnect", () => {
   socket.on("ice", data => { if(socket.partner) socket.partner.emit("ice", data); });
 
   socket.on("disconnect", () => {
-    if(waitingUser === socket) waitingUser = null;
-    if(socket.partner) socket.partner.emit("partner-left");
+      // إزالة من قائمة الانتظار إذا موجود
+      waitingUsers = waitingUsers.filter(s => s !== socket);
+      if(socket.partner){
+          socket.partner.emit("partner-left");
+          socket.partner.partner = null;
+      }
   });
 
 });
